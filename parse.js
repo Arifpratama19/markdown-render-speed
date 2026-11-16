@@ -1,14 +1,16 @@
-// A fast, dependency-free Markdown renderer whose parse(markdown) returns exactly
-// the HTML marked 18.1.3 renders with its defaults (gfm on, breaks off, pedantic
-// off, async off). Written from scratch for the make.fun "Make Markdown rendering
-// faster" bounty; it follows the same block/inline phases as any CommonMark+GFM
-// renderer, but renders straight to strings (no token objects, no second pass)
-// and scans inline text with a single manual pass instead of a regex per token.
+// A fast, dependency-free Markdown renderer whose parse(markdown) returns
+// exactly the HTML marked 18.1.3 renders with its defaults (gfm on, breaks
+// off, pedantic off, async off). Written from scratch for the make.fun
+// "Make Markdown rendering faster" bounty; it follows the same block/inline
+// phases as any CommonMark+GFM renderer, but renders straight to strings
+// (no token objects, no second pass) and scans inline text with a single
+// manual pass instead of a regex per token.
 //
-// Layout: regex constants, small helpers, the inline renderer, the block lexer
-// (which records a light tree of blocks), and the block renderer. Link reference
-// definitions are collected during the block pass and only then is inline text
-// rendered, so a definition anywhere in the document applies to links anywhere.
+// Layout: regex constants, small helpers, the inline renderer, the block
+// lexer (which records a light tree of blocks), and the block renderer.
+// Link reference definitions are collected during the block pass and only
+// then is inline text rendered, so a definition anywhere in the document
+// applies to links anywhere.
 
 // ---------------------------------------------------------------------------
 // Constants and helpers
