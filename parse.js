@@ -1052,6 +1052,19 @@ function fenceIndentCompensation(raw, code) {
     .join('\n');
 }
 
+// Per-item list regexes depend only on maxLead = min(3, indent-1), so
+// there are just four possible sets. Compiling six RegExps per list item
+// was the single biggest hotspot (the docs are list-heavy); precompile
+// them once at module load instead.
+const LIST_RES = [0, 1, 2, 3].map((maxLead) => ({
+  nextBull: new RegExp(`^ {0,${maxLead}}(?:[*+-]|\\d{1,9}[.)])((?:[ \\t][^\\n]*)?(?:\\n|$))`),
+  hrAt: new RegExp(`^ {0,${maxLead}}((?:-[ \\t]*){3,}|(?:_[ \\t]*){3,}|(?:\\*[ \\t]*){3,})(?:\\n+|$)`),
+  fencesAt: new RegExp(`^ {0,${maxLead}}(?:\`\`\`|~~~)`),
+  headingAt: new RegExp(`^ {0,${maxLead}}#{1,6}(?:\\s|$)`),
+  htmlAt: new RegExp(`^ {0,${maxLead}}(?:</?(?:${BLOCK_TAGS})(?: +|$|/?>)|<(?:(?:script|pre|style|textarea)(?:[\\s>]|$)|!--)|<\\?|<![A-Za-z]|<!\\[CDATA\\[)`, 'i'),
+  bqAt: new RegExp(`^ {0,${maxLead}}>`),
+}));
+
 class BlockLexer {
   constructor() {
     this.links = Object.create(null);
@@ -1322,10 +1335,11 @@ class BlockLexer {
       e = e.substring(t[0].length);
       const firstLine = t[2].split('\n', 1)[0];
       const bullLen = t[1].length;
-      const mText = firstLine.replace(R.leadingSpaceTab, (ws) => expandTabs(ws, bullLen));
+      const mText = firstLine.includes('\t') ? firstLine.replace(R.leadingSpaceTab, (ws) => expandTabs(ws, bullLen)) : firstLine;
       const nextLine = e.split('\n', 1)[0];
       const emptyFirst = !mText.trim();
       let indent;
+      let parts = null;
       if (emptyFirst && R.blankLine.test(nextLine)) {
         e = e.substring(nextLine.length + 1);
         blankItem = true;
@@ -1333,37 +1347,33 @@ class BlockLexer {
       if (!blankItem) {
         if (emptyFirst) {
           indent = bullLen + 1;
+          parts = [''];
         } else {
           indent = mText.search(R.nonSpaceChar);
           indent = indent > 4 ? 1 : indent;
-          content = mText.slice(indent);
+          parts = [mText.slice(indent)];
           indent += bullLen;
         }
         const maxLead = Math.min(3, indent - 1);
-        const nextBull = new RegExp(`^ {0,${maxLead}}(?:[*+-]|\\d{1,9}[.)])((?:[ \t][^\\n]*)?(?:\\n|$))`);
-        const hrAt = new RegExp(`^ {0,${maxLead}}((?:-[ \t]*){3,}|(?:_[ \t]*){3,}|(?:\\*[ \t]*){3,})(?:\\n+|$)`);
-        const fencesAt = new RegExp(`^ {0,${maxLead}}(?:\`\`\`|~~~)`);
-        const headingAt = new RegExp(`^ {0,${maxLead}}#{1,6}(?:\\s|$)`);
-        const htmlAt = new RegExp(`^ {0,${maxLead}}(?:</?(?:${BLOCK_TAGS})(?: +|$|/?>)|<(?:(?:script|pre|style|textarea)(?:[\\s>]|$)|!--)|<\\?|<![A-Za-z]|<!\\[CDATA\\[)`, 'i');
-        const bqAt = new RegExp(`^ {0,${maxLead}}>`);
+        const { nextBull, hrAt, fencesAt, headingAt, htmlAt, bqAt } = LIST_RES[maxLead];
         let cur = mText;
         let empty = emptyFirst;
         for (; e;) {
           const line = e.split('\n', 1)[0];
-          let check = line.replace(R.leadingSpaceTab, (ws) => expandTabs(ws));
+          let check = line.includes('\t') ? line.replace(R.leadingSpaceTab, (ws) => expandTabs(ws)) : line;
           if (
             fencesAt.test(line) || headingAt.test(line) || htmlAt.test(line) ||
             bqAt.test(line) || nextBull.test(line) || hrAt.test(line)
           ) break;
           if (check.search(R.nonSpaceChar) >= indent || !line.trim()) {
-            content += '\n' + check.slice(indent);
+            parts.push(check.slice(indent));
           } else {
             if (
               empty || cur.replace(R.tabCharGlobal, '    ').search(R.nonSpaceChar) >= 4 ||
               fencesAt.test(cur) || headingAt.test(cur) || htmlAt.test(cur) || hrAt.test(cur)
             ) break;
             const isSetext = /^ {0,3}(?:=+|-+) *$/.test(line) && LHEADING_RE.test(cur + '\n' + line);
-            content += '\n' + (isSetext ? '    ' + check.replace(/^ {0,3}/, '') : line);
+            parts.push(isSetext ? '    ' + check.replace(/^ {0,3}/, '') : line);
           }
           empty = !line.trim();
           e = e.substring(line.length + 1);
@@ -1375,7 +1385,7 @@ class BlockLexer {
         if (pendingLoose) rec.loose = true;
         else if (R.doubleBlankLine.test(itemRaw)) pendingLoose = true;
       }
-      rec.items.push({ text: content, task: false, checked: false, loose: false, raw: itemRaw, tokens: [] });
+      rec.items.push({ text: parts ? parts.join('\n') : content, task: false, checked: false, loose: false, raw: itemRaw, tokens: [] });
     }
     const lastItem = rec.items[rec.items.length - 1];
     if (!lastItem) return null;
